@@ -37,7 +37,7 @@ jobs:
           apt install -y sudo git make build-essential wget curl 
           
           VERSION=${{ steps.get_tag.outputs.tag }}
-          TAGS="with_wireguard"
+          TAGS="with_wireguard with_gvisor"
           
           go build -v -tags "$TAGS" \
             -ldflags "-X github.com/sagernet/sing-box/constant.Version=${{ inputs.version }} -s -w -buildid=" \
