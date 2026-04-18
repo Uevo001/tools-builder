@@ -1,0 +1,62 @@
+name: Sing-box 1.11 Server
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version name, for example: 1.11.15"
+        default: '1.11.15'
+        required: true
+        type: string
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:latest
+    steps:
+      - name: Checkout sing-box
+        uses: actions/checkout@v6
+        with:
+          repository: SagerNet/sing-box
+          ref: v${{ inputs.version }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: 'go.mod'
+          
+      - name: Build Binary
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: |
+          apt -y update
+          apt -y upgrade
+          apt install -y sudo git make build-essential wget curl 
+          
+          VERSION=${{ steps.get_tag.outputs.tag }}
+          TAGS="with_wireguard"
+          
+          go build -v -tags "$TAGS" \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=${{ inputs.version }} -s -w -buildid=" \
+            -o sing-box-linux-amd64 \
+            ./cmd/sing-box
+
+          echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          name: sing-box-${{ steps.get_tag.outputs.tag }}-linux-amd64
+          path: sing-box-linux-amd64
+
+      - name: Release
+        uses: softprops/action-gh-release@v2.3.2
+        with:
+          tag_name: "sing-box_server-BUILD_${{ env.DATE }}"
+          draft: false
+          prerelease: false
+          files: sing-box-linux-amd64
