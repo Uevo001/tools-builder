@@ -98,7 +98,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          name: "NGINX-BoringSSL_${{ env.DATE }}
+          name: "NGINX-BoringSSL_${{ env.DATE }}"
           path: nginx-built.tar.gz
 
       - name: Release
