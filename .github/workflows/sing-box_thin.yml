@@ -11,6 +11,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     container:
       image: debian:latest
     steps:
@@ -32,26 +34,71 @@ jobs:
           GOARCH: amd64
           CGO_ENABLED: 0
         run: |
+          set -euxo pipefail
           apt -y update
-          apt -y upgrade
-          apt install -y sudo git make build-essential wget curl 
-          
-          VERSION=${{ steps.get_tag.outputs.tag }}
+          apt install -y sudo git make build-essential wget curl dpkg-dev
+
           TAGS="with_quic with_acme"
-          
+
           go build -v -tags "$TAGS" \
             -ldflags "-X github.com/sagernet/sing-box/constant.Version=${{ inputs.version }} -s -w -buildid=" \
             -o sing-box-linux-amd64 \
             ./cmd/sing-box
 
+          mkdir -p package/usr/local/bin package/DEBIAN
+          install -m 0755 sing-box-linux-amd64 package/usr/local/bin/sing-box
+          cat > package/DEBIAN/control <<EOF
+          Package: sing-box-thin
+          Version: ${{ inputs.version }}
+          Architecture: amd64
+          Maintainer: tools-builder
+          Description: sing-box thin server build
+          Section: net
+          Priority: optional
+          EOF
+          dpkg-deb --build package sing-box-thin_${{ inputs.version }}_amd64.deb
+
+          mkdir -p apt-repo/pool/main/s/sing-box-thin
+          cp sing-box-thin_${{ inputs.version }}_amd64.deb apt-repo/pool/main/s/sing-box-thin/
+
+          mkdir -p apt-repo/dists/stable/main/binary-amd64
+          dpkg-scanpackages --arch amd64 apt-repo/pool > apt-repo/dists/stable/main/binary-amd64/Packages
+          gzip -kf apt-repo/dists/stable/main/binary-amd64/Packages
+
+          cat > apt-repo/dists/stable/Release <<EOF
+          Origin: ${GITHUB_REPOSITORY}
+          Label: sing-box-thin
+          Suite: stable
+          Codename: stable
+          Architectures: amd64
+          Components: main
+          Description: sing-box-thin apt repository
+          EOF
+
           echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
 
-      - name: Upload Artifact
+      - name: Upload Binary Artifact
         uses: actions/upload-artifact@v7
         with:
           archive: false
-          name: sing-box-${{ steps.get_tag.outputs.tag }}-linux-amd64
+          name: sing-box-${{ inputs.version }}-linux-amd64
           path: sing-box-linux-amd64
+
+      - name: Upload Deb Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          archive: false
+          name: sing-box-${{ inputs.version }}-linux-amd64-deb
+          path: sing-box-thin_${{ inputs.version }}_amd64.deb
+
+      - name: Publish APT repository to gh-pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: ./apt-repo
+          force_orphan: false
+          keep_files: true
 
       - name: Release
         uses: softprops/action-gh-release@v2.3.2
@@ -59,4 +106,6 @@ jobs:
           tag_name: "sing-box_server-BUILD_${{ env.DATE }}"
           draft: false
           prerelease: false
-          files: sing-box-linux-amd64
+          files: |
+            sing-box-linux-amd64
+            sing-box-thin_${{ inputs.version }}_amd64.deb
