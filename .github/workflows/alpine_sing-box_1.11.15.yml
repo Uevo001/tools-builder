@@ -18,141 +18,75 @@ jobs:
         run: |
           apk add --no-cache \
             alpine-sdk \
-            go \
             git \
+            go \
+            sudo \
+            wget \
             curl \
-            tar \
-            sudo
+            bash
 
-      - name: Create builder
+      - name: Create build user
         run: |
           adduser -D builder
-          echo "builder ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
           mkdir -p /home/builder/.abuild
-          chown -R builder:builder /home/builder
+          mkdir -p /home/builder/packages
+          mkdir -p /var/cache/distfiles
 
-      - name: Generate signing key
+          chown -R builder:builder \
+            /home/builder \
+            /var/cache/distfiles
+
+      - name: Generate abuild key
         run: |
           su builder -c "abuild-keygen -a -i -n"
 
-      - name: Prepare APKBUILD
+      - name: Checkout aports
         run: |
-          mkdir -p /home/builder/aports/community/sing-box
-
-          cat > /home/builder/aports/community/sing-box/APKBUILD <<'EOF'
-          pkgname=sing-box
-          pkgver=1.11.15
-          pkgrel=0
-          pkgdesc="The universal proxy platform"
-          url="https://github.com/SagerNet/sing-box"
-          arch="x86_64 aarch64"
-          license="GPL-3.0-or-later"
-
-          makedepends="
-            go
-            git
-          "
-
-          subpackages="
-            $pkgname-openrc
-          "
-
-          source="
-            sing-box-${pkgver}.tar.gz::https://github.com/SagerNet/sing-box/archive/refs/tags/v${pkgver}.tar.gz
-            sing-box.initd
-            sing-box.confd
-          "
-
-          builddir="$srcdir/sing-box-$pkgver"
-
-          build() {
-            export CGO_ENABLED=0
-
-            go build \
-              -trimpath \
-              -ldflags="-s -w" \
-              -o sing-box \
-              ./cmd/sing-box
-          }
-
-          package() {
-            install -Dm755 \
-              sing-box \
-              "$pkgdir/usr/bin/sing-box"
-
-            install -d \
-              "$pkgdir/etc/sing-box"
-
-            cat > "$pkgdir/etc/sing-box/config.json" <<CONFIG
-          {
-            "log": {
-              "level": "info"
-            }
-          }
-          CONFIG
-          }
-
-          openrc() {
-            pkgdesc="OpenRC service"
-
-            install -Dm755 \
-              "$srcdir/sing-box.initd" \
-              "$subpkgdir/etc/init.d/sing-box"
-
-            install -Dm644 \
-              "$srcdir/sing-box.confd" \
-              "$subpkgdir/etc/conf.d/sing-box"
-          }
-
-          sha512sums="
-          SKIP
-          SKIP
-          SKIP
-          "
-          EOF
-
-          cat > /home/builder/aports/community/sing-box/sing-box.initd <<'EOF'
-          #!/sbin/openrc-run
-
-          name="sing-box"
-
-          command="/usr/bin/sing-box"
-          command_args="run -c ${SINGBOX_CONFIG}"
-          command_background="yes"
-
-          pidfile="/run/sing-box.pid"
-
-          depend() {
-              need net
-          }
-          EOF
-
-          cat > /home/builder/aports/community/sing-box/sing-box.confd <<'EOF'
-          SINGBOX_CONFIG="/etc/sing-box/config.json"
-          EOF
+          git clone \
+            --depth=1 \
+            https://gitlab.alpinelinux.org/alpine/aports.git \
+            /home/builder/aports
 
           chown -R builder:builder /home/builder/aports
+
+      - name: Patch version
+        run: |
+          su builder -c '
+            cd /home/builder/aports/community/sing-box
+
+            sed -i "s/^pkgver=.*/pkgver=1.11.15/" APKBUILD
+
+            sed -i "/^sha512sums=/,\$d" APKBUILD
+
+            abuild checksum
+          '
 
       - name: Build package
         run: |
           su builder -c '
             cd /home/builder/aports/community/sing-box
-            abuild checksum
+
             abuild -r
           '
 
-      - name: Collect packages
+      - name: Collect artifacts
         run: |
           mkdir artifacts
-          find /home/builder/packages -name "*.apk" -exec cp {} artifacts/ \;
 
-      - uses: actions/upload-artifact@v4
+          find /home/builder/packages \
+            -name "*.apk" \
+            -exec cp {} artifacts/ \;
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: sing-box-1.11.15
           path: artifacts/*.apk
 
-      - name: Create Release
+      - name: Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v1.11.15-apk
