@@ -77,10 +77,10 @@ jobs:
       - name: Build BoringSSL
         run: |
           cd boringssl
-          mkdir build && cd build
+          mkdir -p build && cd build
           cmake .. -DCMAKE_BUILD_TYPE=Release \
-                   -DCMAKE_C_FLAGS="-march=x86-64-v3 -O3" \
-                   -DCMAKE_CXX_FLAGS="-march=x86-64-v3 -O3"
+                   -DCMAKE_C_FLAGS="-march=x86-64-v3 -O3 -Wno-error=stringop-overflow -Wno-stringop-overflow" \
+                   -DCMAKE_CXX_FLAGS="-march=x86-64-v3 -O3 -Wno-error=stringop-overflow -Wno-stringop-overflow"
           make -j$(nproc)
 
       - name: Build Nginx
