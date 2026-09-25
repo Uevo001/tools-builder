@@ -36,22 +36,22 @@ jobs:
           echo "NGINX_TAG=$TAG" >> $GITHUB_ENV
           echo "Latest Nginx tag: $TAG"
 
-      - name: Get latest BoringSSL tag
+      - name: Get latest BoringSSL release
         id: boringssl
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/google/boringssl/tags?per_page=5" \
-            | jq -r '.[0].name')
+            "https://api.github.com/repos/google/boringssl/releases/latest" \
+            | jq -r '.tag_name')
           
           if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
-            echo "Failed to get latest BoringSSL tag"
+            echo "Failed to get latest BoringSSL release"
             exit 1
           fi
           echo "BORINGSSL_TAG=$TAG" >> $GITHUB_ENV
-          echo "Latest BoringSSL tag: $TAG"
+          echo "Latest BoringSSL release: $TAG"
 
       - name: Checkout Nginx
         uses: actions/checkout@v4
