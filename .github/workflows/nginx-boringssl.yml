@@ -1,38 +1,73 @@
 name: NGINX (BoringSSL)
-run-name: Build NGINX (${{ inputs.nginx_version }}) with BoringSSL
+run-name: Build NGINX (${{ env.NGINX_TAG }}) with BoringSSL (${{ env.BORINGSSL_TAG }})
+
 on:
   workflow_dispatch:
-    inputs:
-      nginx_version:
-        description: 'Nginx version tag (e.g., release-1.30.1).'
-        required: true
-        default: 'release-1.30.1'
 
 jobs:
   build-nginx:
     runs-on: ubuntu-latest
     container:
       image: debian:latest
+    permissions:
+      contents: write
+
     steps:
       - name: Install dependencies
         run: |
           apt-get update
           apt-get upgrade -y
-          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev libssl-dev git sudo curl wget make cmake golang g++ g++-multilib
+          apt-get install -y build-essential libpcre2-8-0 libpcre2-dev zlib1g zlib1g-dev \
+            libssl-dev git sudo curl wget make cmake golang g++ g++-multilib jq
+
+      - name: Get latest Nginx release tag
+        id: nginx
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/nginx/nginx/tags?per_page=20" \
+            | jq -r '[.[] | select(.name | startswith("release-"))] | .[0].name')
+          
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "Failed to get latest Nginx tag"
+            exit 1
+          fi
+          echo "NGINX_TAG=$TAG" >> $GITHUB_ENV
+          echo "Latest Nginx tag: $TAG"
+
+      - name: Get latest BoringSSL tag
+        id: boringssl
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=$(curl -s -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/google/boringssl/tags?per_page=5" \
+            | jq -r '.[0].name')
+          
+          if [ -z "$TAG" ] || [ "$TAG" = "null" ]; then
+            echo "Failed to get latest BoringSSL tag"
+            exit 1
+          fi
+          echo "BORINGSSL_TAG=$TAG" >> $GITHUB_ENV
+          echo "Latest BoringSSL tag: $TAG"
 
       - name: Checkout Nginx
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: nginx/nginx
           path: nginx
-          ref: ${{ inputs.nginx_version }}
+          ref: ${{ env.NGINX_TAG }}
           fetch-depth: 0
 
       - name: Checkout BoringSSL
-        uses: actions/checkout@v6
+        uses: actions/checkout@v4
         with:
           repository: google/boringssl
           path: boringssl
+          ref: ${{ env.BORINGSSL_TAG }}
           fetch-depth: 0
 
       - name: Build BoringSSL
@@ -48,7 +83,6 @@ jobs:
         shell: bash
         run: |
           cd nginx
-
           CONF_ARGS=(
             --prefix=/usr/local/nginx
             --with-file-aio
@@ -83,11 +117,9 @@ jobs:
             --with-cc-opt='-I../boringssl/include -O3 -march=x86-64-v3 -flto -fno-semantic-interposition -fno-plt -pipe -fno-strict-aliasing -x c'
             --with-ld-opt='-L../boringssl/build -L../boringssl/build/crypto -lssl -lcrypto -lstdc++ -lpthread -lm -Wl,-O2 -Wl,--as-needed -Wl,--sort-common -Wl,-z,now -Wl,-z,relro -flto -Wl,-s'
           )
-
           ./auto/configure "${CONF_ARGS[@]}"
           make -j$(nproc)
           make install
-
           /usr/local/nginx/sbin/nginx -V
           echo "DATE=v$(date -u +'%Y.%m.%d-%H%M')" >> $GITHUB_ENV
 
@@ -95,16 +127,22 @@ jobs:
         run: tar -czvf nginx-built.tar.gz -C /usr/local --exclude='nginx/logs/*' nginx
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
-          archive: false
-          name: "NGINX-BoringSSL_${{ env.DATE }}"
+          name: "NGINX-BoringSSL_${{ env.NGINX_TAG }}_${{ env.BORINGSSL_TAG }}_${{ env.DATE }}"
           path: nginx-built.tar.gz
+          if-no-files-found: error
 
       - name: Release
-        uses: softprops/action-gh-release@v2.3.2
+        uses: softprops/action-gh-release@v2
         with:
-          tag_name: "NGINX-BoringSSL_${{ env.DATE }}"
+          tag_name: "NGINX-BoringSSL_${{ env.NGINX_TAG }}_${{ env.BORINGSSL_TAG }}_${{ env.DATE }}"
+          name: "NGINX ${{ env.NGINX_TAG }} + BoringSSL ${{ env.BORINGSSL_TAG }}"
           draft: false
           prerelease: false
           files: nginx-built.tar.gz
+          body: |
+            Built with:
+            - Nginx: `${{ env.NGINX_TAG }}`
+            - BoringSSL: `${{ env.BORINGSSL_TAG }}`
+            - Build date: `${{ env.DATE }}`
