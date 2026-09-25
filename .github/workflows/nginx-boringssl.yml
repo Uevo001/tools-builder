@@ -1,5 +1,4 @@
 name: NGINX (BoringSSL)
-run-name: Build NGINX (${{ env.NGINX_TAG }}) with BoringSSL (${{ env.BORINGSSL_TAG }})
 
 on:
   workflow_dispatch:
