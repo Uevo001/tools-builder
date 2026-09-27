@@ -29,12 +29,7 @@ jobs:
           go install github.com/caddyserver/xcaddy/cmd/xcaddy@latest
           ~/go/bin/xcaddy build \
             --with github.com/caddyserver/forwardproxy=github.com/klzgrad/forwardproxy@naive \
-            --with github.com/imgk/caddy-trojan \
-            --with github.com/caddy-dns/cloudflare \
-            --with github.com/WeidiDeng/caddy-cloudflare-ip \
-            --with github.com/mholt/caddy-events-exec \
-            --with github.com/mholt/caddy-l4 \
-            --with github.com/caddyserver/jsonc-adapter 
+            --with github.com/caddy-dns/cloudflare
 
       - name: Pack Caddy assets
         run: |
